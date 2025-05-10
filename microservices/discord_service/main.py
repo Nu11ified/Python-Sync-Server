@@ -2,7 +2,7 @@
 
 import discord
 from discord.ext import commands
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 import asyncio
 import os
 import httpx
@@ -66,8 +66,22 @@ async def on_member_update(before: discord.Member, after: discord.Member):
 
 # --- FastAPI Endpoints (kept from previous setup) ---
 @app.get("/health")
-async def health_check():
-    return {"status": "ok", "service": "discord_service"}
+async def health_check(discord_id: str = Query(None, description="Discord user ID to check access for")):
+    base = {"status": "ok", "service": "discord_service"}
+    if discord_id:
+        if not bot.is_ready():
+            return {**base, "user_check": {"discord_id": discord_id, "found": False, "error": "Bot not ready"}}
+        try:
+            user_id_int = int(discord_id)
+        except ValueError:
+            return {**base, "user_check": {"discord_id": discord_id, "found": False, "error": "Invalid Discord ID format"}}
+        for guild in bot.guilds:
+            member = guild.get_member(user_id_int)
+            if member:
+                roles = [{"id": str(role.id), "name": role.name} for role in member.roles if not role.is_default()]
+                return {**base, "user_check": {"discord_id": discord_id, "found": True, "guild_id": str(guild.id), "guild_name": guild.name, "roles": roles}}
+        return {**base, "user_check": {"discord_id": discord_id, "found": False, "error": "User not found in any guild"}}
+    return base
 
 @app.get("/user/{discord_id}/roles")
 async def get_discord_user_roles(discord_id: str):

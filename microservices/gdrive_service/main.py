@@ -1,6 +1,6 @@
 # Google Drive microservice main application 
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 import os
 from dotenv import load_dotenv
@@ -67,8 +67,28 @@ def get_drive_service():
 
 # --- Service Endpoints ---
 @app.get("/health")
-async def health_check():
-    return {"status": "ok", "service": "gdrive_service"}
+async def health_check(email: str = Query(None, description="Email to check Google Drive access for")):
+    base = {"status": "ok", "service": "gdrive_service"}
+    if email:
+        drive_service = get_drive_service()
+        if not drive_service:
+            return {**base, "user_check": {"email": email, "has_access": False, "error": "Google Drive service not available"}}
+        try:
+            # List files where the user has a permission (first 1000 for now)
+            # This is a best-effort check; for large drives, a more efficient query or pagination is needed
+            results = drive_service.files().list(
+                q=f"'{email}' in readers or '{email}' in writers or '{email}' in owners",
+                pageSize=1000,
+                fields="files(id, name, mimeType, parents)"
+            ).execute()
+            items = [
+                {"id": f["id"], "name": f["name"], "type": f["mimeType"], "parents": f.get("parents", [])}
+                for f in results.get("files", [])
+            ]
+            return {**base, "user_check": {"email": email, "has_access": bool(items), "items": items}}
+        except Exception as e:
+            return {**base, "user_check": {"email": email, "has_access": False, "error": str(e)}}
+    return base
 
 @app.post("/permissions/grant")
 async def grant_drive_permission(request: GrantPermissionRequest):

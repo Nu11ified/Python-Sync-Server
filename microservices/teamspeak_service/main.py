@@ -1,5 +1,5 @@
 # Teamspeak microservice main application 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
@@ -61,8 +61,29 @@ _groups_cache: Dict = {"data": None, "timestamp": 0}
 GROUPS_CACHE_TTL = 300  # 5 minutes in seconds
 
 @app.get("/health")
-async def health_check():
-    return {"status": "ok", "service": "teamspeak_service"}
+async def health_check(teamspeak_unique_id: str = Query(None, description="Teamspeak unique ID to check access for")):
+    base = {"status": "ok", "service": "teamspeak_service"}
+    if teamspeak_unique_id:
+        conn = get_ts_connection()
+        if not conn:
+            return {**base, "user_check": {"teamspeak_unique_id": teamspeak_unique_id, "found": False, "error": "Teamspeak connection not available"}}
+        try:
+            resp_cldbid = conn.clientgetdbidfromuid(cluid=teamspeak_unique_id)
+            if not resp_cldbid or not resp_cldbid.parsed:
+                return {**base, "user_check": {"teamspeak_unique_id": teamspeak_unique_id, "found": False, "error": "User not found"}}
+            client_db_id = resp_cldbid.parsed[0]['cldbid']
+            # Get all server groups for this client
+            resp_groups = conn.servergroupsbyclientid(cldbid=client_db_id)
+            groups = [{"id": g["sgid"], "name": g["name"]} for g in resp_groups.parsed]
+            return {**base, "user_check": {"teamspeak_unique_id": teamspeak_unique_id, "found": True, "groups": groups}}
+        except Exception as e:
+            return {**base, "user_check": {"teamspeak_unique_id": teamspeak_unique_id, "found": False, "error": str(e)}}
+        finally:
+            try:
+                conn.quit()
+            except:
+                pass
+    return base
 
 @app.post("/groups/add_user")
 async def add_user_to_group(request: UserGroupActionRequest):
