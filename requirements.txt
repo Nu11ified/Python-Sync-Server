@@ -4,3 +4,4 @@ uvicorn
 discord.py
 google-api-python-client
 ts3
+python-dotenv
