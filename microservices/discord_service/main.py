@@ -6,6 +6,8 @@ from fastapi import FastAPI
 import asyncio
 import os
 import httpx
+import time
+from typing import List, Dict
 
 # Configuration - Ideally, use environment variables or a config file
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -21,6 +23,10 @@ intents.members = True  # Required for on_member_update to receive member change
 intents.message_content = True # Optional: if you plan to add message-based commands
 
 bot = commands.Bot(command_prefix="!", intents=intents) # command_prefix is arbitrary if not used
+
+# --- In-memory cache for roles ---
+_roles_cache: Dict = {"data": None, "timestamp": 0}
+ROLES_CACHE_TTL = 300  # 5 minutes in seconds
 
 @bot.event
 async def on_ready():
@@ -95,6 +101,31 @@ async def get_discord_user_roles(discord_id: str):
         # If user not found in bot's cache, could fall back to mock or error
         print(f"Discord service: User {discord_id} not found in bot's guilds for API endpoint request.")
         return {"error": "User not found in accessible guilds.", "discord_id": discord_id, "roles": []}
+
+@app.get("/roles")
+async def get_all_discord_roles():
+    now = time.time()
+    if _roles_cache["data"] is not None and (now - _roles_cache["timestamp"] < ROLES_CACHE_TTL):
+        return {"cached": True, "roles": _roles_cache["data"]}
+
+    if not bot.is_ready():
+        return {"error": "Bot is not ready or not connected.", "roles": []}
+
+    all_roles = []
+    for guild in bot.guilds:
+        for role in guild.roles:
+            # Exclude @everyone (which is always the first role)
+            if role.is_default():
+                continue
+            all_roles.append({
+                "id": str(role.id),
+                "name": role.name,
+                "guild_id": str(guild.id),
+                "guild_name": guild.name
+            })
+    _roles_cache["data"] = all_roles
+    _roles_cache["timestamp"] = now
+    return {"cached": False, "roles": all_roles}
 
 # --- Bot and FastAPI App Lifespan Management ---
 async def run_bot():

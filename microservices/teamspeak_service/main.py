@@ -3,6 +3,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
+import time
+from typing import List, Dict
 
 # Attempt to load ts3 library
 try:
@@ -54,7 +56,10 @@ def get_ts_connection():
         print(f"Teamspeak Service: General error establishing TS connection: {str(e)}")
         return None
 
-# --- Service Endpoints ---
+# --- In-memory cache for groups ---
+_groups_cache: Dict = {"data": None, "timestamp": 0}
+GROUPS_CACHE_TTL = 300  # 5 minutes in seconds
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "teamspeak_service"}
@@ -136,6 +141,35 @@ async def remove_user_from_group(request: UserGroupActionRequest):
             try:
                 conn.quit()
             except: pass
+
+@app.get("/groups")
+async def get_all_teamspeak_groups():
+    now = time.time()
+    if _groups_cache["data"] is not None and (now - _groups_cache["timestamp"] < GROUPS_CACHE_TTL):
+        return {"cached": True, "groups": _groups_cache["data"]}
+
+    conn = get_ts_connection()
+    if not conn:
+        return {"error": "Teamspeak connection not available.", "groups": []}
+
+    try:
+        resp = conn.servergrouplist()
+        # resp.parsed is a list of dicts with keys: 'sgid', 'name', ...
+        groups = [
+            {"id": g["sgid"], "name": g["name"]}
+            for g in resp.parsed
+        ]
+        _groups_cache["data"] = groups
+        _groups_cache["timestamp"] = now
+        return {"cached": False, "groups": groups}
+    except Exception as e:
+        print(f"Teamspeak Service: Error fetching groups: {e}")
+        return {"error": str(e), "groups": []}
+    finally:
+        try:
+            conn.quit()
+        except:
+            pass
 
 # Example of how you might run this (for development):
 # Make sure TS_QUERY_LOGIN_PASSWORD and other TS_* env vars are set.

@@ -201,3 +201,54 @@ Key interactions (currently mocked in the orchestrator, to be implemented in Nex
 *   The `discord_service` runs a live Discord bot. It needs its token and for the bot to be in a server to detect role changes.
 *   `gdrive_service` and `teamspeak_service` will attempt real API calls if their respective credentials are correctly configured in `.env`. They have fallbacks to simulated success if credentials/libraries are missing, to allow testing of the orchestrator flow.
 *   Error handling in the orchestrator for calls to microservices has been improved, but further resilience (e.g., retries, dead-letter queues for critical updates) could be added for a production system.
+
+## Microservice Endpoints for Admin Mapping Menus
+
+Each microservice provides an endpoint to list all possible mapping targets (with in-memory caching):
+
+### Discord Service
+- **Endpoint:** `GET /roles`
+- **Description:** Returns all roles (excluding @everyone) for all guilds the bot is in.
+- **Cache:** 5 minutes (in-memory)
+- **Example Response:**
+    ```json
+    {
+      "cached": false,
+      "roles": [
+        {"id": "1234567890", "name": "Member", "guild_id": "987654321", "guild_name": "My Server"},
+        {"id": "2345678901", "name": "Moderator", "guild_id": "987654321", "guild_name": "My Server"}
+      ]
+    }
+    ```
+
+### Teamspeak Service
+- **Endpoint:** `GET /groups`
+- **Description:** Returns all server groups for the configured virtual server.
+- **Cache:** 5 minutes (in-memory)
+- **Example Response:**
+    ```json
+    {
+      "cached": false,
+      "groups": [
+        {"id": "6", "name": "Server Admin"},
+        {"id": "7", "name": "Normal"}
+      ]
+    }
+    ```
+
+### Google Drive Service
+- **Endpoint:** `GET /items`
+- **Description:** Returns all files/folders the service account can access (first 1000).
+- **Cache:** 10 minutes (in-memory)
+- **Example Response:**
+    ```json
+    {
+      "cached": false,
+      "items": [
+        {"id": "1a2b3c", "name": "Project Docs", "type": "application/vnd.google-apps.folder", "parents": []},
+        {"id": "4d5e6f", "name": "Meeting Notes.docx", "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "parents": ["1a2b3c"]}
+      ]
+    }
+    ```
+
+These endpoints are intended for use by the admin panel to populate mapping menus, and are cached to avoid excessive API calls. The cache TTLs can be adjusted as needed in each microservice.

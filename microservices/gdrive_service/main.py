@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, EmailStr
 import os
 from dotenv import load_dotenv
+import time
+from typing import List, Dict
 
 # Attempt to load google client libraries
 try:
@@ -33,6 +35,10 @@ class GrantPermissionRequest(BaseModel):
 class RevokePermissionRequest(BaseModel):
     user_email: EmailStr
     item_id: str
+
+# --- In-memory cache for items ---
+_items_cache: Dict = {"data": None, "timestamp": 0}
+ITEMS_CACHE_TTL = 600  # 10 minutes in seconds
 
 def get_drive_service():
     if not GOOGLE_LIBS_AVAILABLE:
@@ -125,6 +131,39 @@ async def revoke_drive_permission(request: RevokePermissionRequest):
     except Exception as e:
         print(f"GDrive Service: General error revoking permission: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error in GDrive service: {str(e)}")
+
+@app.get("/items")
+async def get_all_gdrive_items():
+    now = time.time()
+    if _items_cache["data"] is not None and (now - _items_cache["timestamp"] < ITEMS_CACHE_TTL):
+        return {"cached": True, "items": _items_cache["data"]}
+
+    drive_service = get_drive_service()
+    if not drive_service:
+        return {"error": "Google Drive service not available.", "items": []}
+
+    try:
+        # List all files/folders the service account can access (first 1000 for now)
+        # You can adjust the query to only include folders, or only files, or both
+        results = drive_service.files().list(
+            pageSize=1000,
+            fields="files(id, name, mimeType, parents)"
+        ).execute()
+        items = [
+            {
+                "id": f["id"],
+                "name": f["name"],
+                "type": f["mimeType"],
+                "parents": f.get("parents", [])
+            }
+            for f in results.get("files", [])
+        ]
+        _items_cache["data"] = items
+        _items_cache["timestamp"] = now
+        return {"cached": False, "items": items}
+    except Exception as e:
+        print(f"GDrive Service: Error fetching items: {e}")
+        return {"error": str(e), "items": []}
 
 # Example of how you might run this (for development):
 # uvicorn microservices.gdrive_service.main:app --reload --port 8002 
