@@ -5,3 +5,10 @@ discord.py
 google-api-python-client
 ts3
 python-dotenv
+email-validator
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-core
+google-api-python-client
+google-api-core
