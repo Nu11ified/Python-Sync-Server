@@ -1,0 +1,36 @@
+services:
+  orchestrator:
+    build: .
+    command: uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - discord_service
+      - gdrive_service
+      - teamspeak_service
+
+  discord_service:
+    build: .
+    command: uvicorn microservices.discord_service.main:app --host 0.0.0.0 --port 8001
+    env_file:
+      - .env
+    ports:
+      - "8001:8001"
+
+  gdrive_service:
+    build: .
+    command: uvicorn microservices.gdrive_service.main:app --host 0.0.0.0 --port 8002
+    env_file:
+      - .env
+    ports:
+      - "8002:8002"
+
+  teamspeak_service:
+    build: .
+    command: uvicorn microservices.teamspeak_service.main:app --host 0.0.0.0 --port 8003
+    env_file:
+      - .env
+    ports:
+      - "8003:8003" 
